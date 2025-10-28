@@ -65,46 +65,51 @@ def find_k_min(A, b, eps=1e-3, max_iter=50):
     return high, b_correction(b, high)
 
 # --- A-коррекция ---
-def A_correction(A, b):
+def A_correction(A, b, alpha=0.8):
+    corrected_A = []
+    rad_A = ip.rad(A)
     max_tol = ip.linear.Tol.maximize(A, b)
     lower_bound = abs(max_tol[1]) / (sum(abs(max_tol[0])))
-    rad_A = ip.rad(A)
-    upper_bound = np.min(rad_A)
-    e = (lower_bound + upper_bound) / 2
-    corrected_A = []
+
     for i in range(len(A)):
         A_i = []
         for j in range(len(A[0])):
             if ip.rad(A[i][j]) == 0:
                 A_i.append([A[i][j]._a, A[i][j]._b])
             else:
-                A_i.append([A[i][j]._a + e, A[i][j]._b - e])
+                e = alpha * rad_A[i][j]
+                new_a = A[i][j]._a + e
+                new_b = A[i][j]._b - e
+                if new_a > new_b:
+                    new_a, new_b = (A[i][j]._a + A[i][j]._b)/2, (A[i][j]._a + A[i][j]._b)/2
+                A_i.append([new_a, new_b])
         corrected_A.append(A_i)
     return ip.Interval(corrected_A)
 
 # --- Ab-коррекция ---
 def Ab_correction(A, b, max_iter=50):
     new_A, new_b = copy.deepcopy(A), copy.deepcopy(b)
+
+    #A-step
     emptiness, _, _ = is_empty(new_A, new_b)
     iteration = 0
     while emptiness and iteration < max_iter:
         iteration += 1
         new_A = A_correction(new_A, new_b)
         emptiness, _, _ = is_empty(new_A, new_b)
-        if not emptiness:
-            break
-        new_b = b_correction(new_b, iteration)
-        emptiness, _, _ = is_empty(new_A, new_b)
+    
+    #b-step
+    k_min, new_b = find_k_min(new_A, new_b)
     return new_A, new_b
 
 def visualize_tol(A, b, name: str):
-    
+
 
     os.makedirs("img", exist_ok=True)
     max_tol = ip.linear.Tol.maximize(A, b)
     sol = max_tol[0]
 
-    # --- 3D surface meshgrid 
+    # --- 3D surface meshgrid
     x3d = np.linspace(float(sol[0])-2, float(sol[0])+2, 70)
     y3d = np.linspace(float(sol[1])-2, float(sol[1])+2, 70)
     xx3d, yy3d = np.meshgrid(x3d, y3d)
@@ -112,7 +117,7 @@ def visualize_tol(A, b, name: str):
                       for xi, yi in zip(x_row, y_row)]
                      for x_row, y_row in zip(xx3d, yy3d)])
 
-    # --- 2D functional meshgrid 
+    # --- 2D functional meshgrid
     x2d = np.linspace(0.0, 1.0, 100)
     y2d = np.linspace(0.0, 1.0, 100)
     xx2d, yy2d = np.meshgrid(x2d, y2d)
@@ -127,9 +132,9 @@ def visualize_tol(A, b, name: str):
     ax3d.plot_surface(xx3d, yy3d, zz3d, cmap='plasma', edgecolor='none', alpha=0.9)
     ax3d.scatter(sol[0], sol[1], float(max_tol[1]), color='red', s=60)
     ax3d.set_title(f"Tol surface ({name})")
-    ax3d.set_box_aspect([1,1,0.6])  
+    ax3d.set_box_aspect([1,1,0.6])
 
-    # 2D subplot 
+    # 2D subplot
     ax2d = fig.add_subplot(1,2,2)
     ax2d.contourf(xx2d, yy2d, zz2d, levels=1, colors=["#4472C4","#FFD966"], alpha=0.9)
     ax2d.scatter(sol[0], sol[1], color='black', marker='x', s=60)
@@ -140,9 +145,23 @@ def visualize_tol(A, b, name: str):
     plt.savefig(f"img/{name}.png")
     plt.close()
 
+def compute_area(A, b):
+    x = np.linspace(0.0, 1.0, 100)
+    y = np.linspace(0.0, 1.0, 100)
+    xx, yy = np.meshgrid(x, y)
+    zz = np.array([[1 if ip.linear.Tol.value(A, b, [xi, yi]) >= 0 else 0
+                    for xi, yi in zip(x_row, y_row)]
+                   for x_row, y_row in zip(xx, yy)])
+    dx = x[1] - x[0]
+    dy = y[1] - y[0]
+    area = np.sum(zz) * dx * dy
+    return area
+
 def run_all():
     corrections = [None, "A", "b", "Ab"]
+    results = []
     for i, (A_orig, b_orig) in enumerate(zip(As, bs)):
+        areas = {}
         print(f"\n=== System {i+1} ===")
         for corr in corrections:
             A = copy.deepcopy(A_orig)
@@ -160,6 +179,15 @@ def run_all():
             name = f"S{i+1}_{corr}" if corr else f"S{i+1}_org"
             print(f"[{corr if corr else 'NoCorrection'}] Tol max={maxTol:.6f}, argmax={argmax}")
             visualize_tol(A, b, name)
+
+            area = compute_area(A, b)
+            areas[corr] = area
+        results.append(areas)
+
+    print(f"{'System':<10}{'NoCorr':<12}{'A':<12}{'b':<12}{'Ab':<12}")
+    for i, res in enumerate(results, 1):
+        print(f"{i:<10}{res[None]:<12.6f}{res['A']:<12.6f}{res['b']:<12.6f}{res['Ab']:<12.6f}")
+
 
 # --- Запуск ---
 run_all()
