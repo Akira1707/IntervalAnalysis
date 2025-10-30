@@ -64,25 +64,24 @@ def find_k_min(A, b, eps=1e-3, max_iter=50):
         iteration += 1
     return high, b_correction(b, high)
 
-# --- A-коррекция ---
-def A_correction(A, b, alpha=0.8):
-    corrected_A = []
-    rad_A = ip.rad(A)
+def A_correction(A, b):
     max_tol = ip.linear.Tol.maximize(A, b)
-    lower_bound = abs(max_tol[1]) / (sum(abs(max_tol[0])))
-
+    lower_bound = abs(max_tol[1]) / (abs(max_tol[0][0]) + abs(max_tol[0][1]))
+    rad_A = ip.rad(A)
+    upper_bound = rad_A[0][0]
+    for a_i in rad_A:
+        for a_ij in a_i:
+            if a_ij < upper_bound:
+                upper_bound = a_ij
+    e = (lower_bound + upper_bound) / 2
+    corrected_A = []
     for i in range(len(A)):
         A_i = []
         for j in range(len(A[0])):
             if ip.rad(A[i][j]) == 0:
                 A_i.append([A[i][j]._a, A[i][j]._b])
             else:
-                e = alpha * rad_A[i][j]
-                new_a = A[i][j]._a + e
-                new_b = A[i][j]._b - e
-                if new_a > new_b:
-                    new_a, new_b = (A[i][j]._a + A[i][j]._b)/2, (A[i][j]._a + A[i][j]._b)/2
-                A_i.append([new_a, new_b])
+                A_i.append([A[i][j]._a + e, A[i][j]._b - e])
         corrected_A.append(A_i)
     return ip.Interval(corrected_A)
 
@@ -97,7 +96,7 @@ def Ab_correction(A, b, max_iter=50):
         iteration += 1
         new_A = A_correction(new_A, new_b)
         emptiness, _, _ = is_empty(new_A, new_b)
-    
+
     #b-step
     k_min, new_b = find_k_min(new_A, new_b)
     return new_A, new_b
@@ -127,7 +126,7 @@ def visualize_tol(A, b, name: str):
 
     fig = plt.figure(figsize=(14,6))
 
-    # 3D subplot 
+    # 3D subplot
     ax3d = fig.add_subplot(1,2,1, projection='3d')
     ax3d.plot_surface(xx3d, yy3d, zz3d, cmap='plasma', edgecolor='none', alpha=0.9)
     ax3d.scatter(sol[0], sol[1], float(max_tol[1]), color='red', s=60)
