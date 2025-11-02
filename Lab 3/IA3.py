@@ -64,15 +64,12 @@ def find_k_min(A, b, eps=1e-3, max_iter=50):
         iteration += 1
     return high, b_correction(b, high)
 
+# --- A-коррекция ---
 def A_correction(A, b):
     max_tol = ip.linear.Tol.maximize(A, b)
-    lower_bound = abs(max_tol[1]) / (abs(max_tol[0][0]) + abs(max_tol[0][1]))
+    lower_bound = abs(max_tol[1]) / (sum(abs(max_tol[0])))
     rad_A = ip.rad(A)
-    upper_bound = rad_A[0][0]
-    for a_i in rad_A:
-        for a_ij in a_i:
-            if a_ij < upper_bound:
-                upper_bound = a_ij
+    upper_bound = np.min(rad_A)
     e = (lower_bound + upper_bound) / 2
     corrected_A = []
     for i in range(len(A)):
@@ -86,20 +83,38 @@ def A_correction(A, b):
     return ip.Interval(corrected_A)
 
 # --- Ab-коррекция ---
-def Ab_correction(A, b, max_iter=50):
-    new_A, new_b = copy.deepcopy(A), copy.deepcopy(b)
+def Ab_correction(A, b, w1=1.0, w2=1.0,
+                  alpha_grid=np.linspace(1.0, 0.1, 40),
+                  beta_grid=np.linspace(1.0, 2.0, 40)):
+    midA = ip.mid(A)
+    radA = ip.rad(A)
+    midb = ip.mid(b)
+    radb = ip.rad(b)
 
-    #A-step
-    emptiness, _, _ = is_empty(new_A, new_b)
-    iteration = 0
-    while emptiness and iteration < max_iter:
-        iteration += 1
-        new_A = A_correction(new_A, new_b)
-        emptiness, _, _ = is_empty(new_A, new_b)
+    best = None
 
-    #b-step
-    k_min, new_b = find_k_min(new_A, new_b)
-    return new_A, new_b
+    for α in alpha_grid:
+        for β in beta_grid:
+            A_corr = ip.Interval(midA - radA * α, midA + radA * α)
+            b_corr = ip.Interval(midb - radb * β, midb + radb * β)
+            res = ip.linear.Tol.maximize(A_corr, b_corr)
+            tol_val = float(res[1])
+            J = w1 * (1 - α)**2 + w2 * (β - 1)**2
+
+            if tol_val >= 0:
+                if best is None or J < best[0]:
+                    best = (J, α, β, A_corr, b_corr, tol_val)
+                break  
+
+    if best is None:
+        print(" Не найдено (α, β), при которых Tol ≥ 0.")
+        return A, b
+
+    J_opt, α_opt, β_opt, A_opt, b_opt, Tol_opt = best
+    print(f"[Ab-correction] α*={α_opt:.3f}, β*={β_opt:.3f}, Tol={Tol_opt:.4f}, J={J_opt:.4f}")
+
+    return A_opt, b_opt
+
 
 def visualize_tol(A, b, name: str):
 
