@@ -24,17 +24,16 @@ class IVec:
                 self.x2 = Interval(i2, i2)
 
     def mid(self):
-        """Midpoint of the interval vector"""
         return np.array([(float(self.x1.a)+float(self.x1.b))/2,
                          (float(self.x2.a)+float(self.x2.b))/2])
 
     def width(self):
-        """Width of intervals"""
         return np.array([float(self.x1.b - self.x1.a),
                          float(self.x2.b - self.x2.a)])
 
     def __repr__(self):
         return f"[{self.x1.a}, {self.x1.b}] × [{self.x2.a}, {self.x2.b}]"
+
 
 # Functions f and interval Jacobian
 def f_point(x, xc, yc=0.0):
@@ -45,16 +44,15 @@ def f_point(x, xc, yc=0.0):
     ])
 
 def J_interval(X: IVec, xc, yc=0.0):
-    """Interval Jacobian matrix"""
     a = Interval(1,1)
     b = Interval(-2,-2)*X.x2
     c = Interval(2,2)*(X.x1 - xc)
     d = Interval(2,2)*(X.x2 - yc)
     return np.array([[a,b],[c,d]], dtype=object)
 
+
 # Krawczyk operator
 def krawczyk(X: IVec, xc, yc=0.0):
-    """Perform one Krawczyk iteration"""
     x0 = X.mid()
     fx0 = f_point(x0, xc, yc)
     J_int = J_interval(X, xc, yc)
@@ -93,9 +91,9 @@ def intersect_IVec(A: IVec, B: IVec):
         return None
     return IVec([lo1, hi1],[lo2, hi2])
 
+
 # Solve quartic for x2
 def get_roots_x2(xc, yc=0.0):
-    """Find real roots of (x2^2 - xc)^2 + (x2 - yc)^2 - 1 = 0"""
     coeff = [1, 0, 1 - 2*xc, 0, xc**2 - 1]
     roots = np.roots(coeff)
     x2_real = []
@@ -110,7 +108,6 @@ def get_initial_intervals(xc, margin_x1=0.05, margin_x2=0.05):
     x2_roots = get_roots_x2(xc)
     intervals = []
     if not x2_roots:
-        # No solution – take a wide interval
         intervals.append(IVec([-2,2], [-2,2]))
     else:
         for x2 in x2_roots:
@@ -119,30 +116,52 @@ def get_initial_intervals(xc, margin_x1=0.05, margin_x2=0.05):
                                    [x2-margin_x2, x2+margin_x2]))
     return intervals
 
-# Run Krawczyk iterations and plot
+
+# ============================================================
+# MAIN LOOP
+# ============================================================
+
 xc_values = [0.0, 0.5, 1.0, 1.2]
 yc = 0.0
 count = 0
+
 for xc in xc_values:
     X0_list = get_initial_intervals(xc)
     print(f"\n=== xc = {xc} ===")
+
     for idx, X0 in enumerate(X0_list):
         print(f"\n--- Initial interval #{idx+1} --- {X0}")
         print(f"Midpoint X0: x1={X0.mid()[0]:.6f}, x2={X0.mid()[1]:.6f}")
+
         iterations = [X0]
+        K_list = []   
+
         Xcur = X0
+
+        # Krawczyk iterations
         for k in range(3):
             K = krawczyk(Xcur, xc, yc)
+            K_list.append(K) 
+
             Xnext = intersect_IVec(K, Xcur)
             Xcur = Xnext if Xnext else K
             iterations.append(Xcur)
 
-        # Print results for each iteration
-        for i, box in enumerate(iterations):
-            mid_x = box.mid()
-            print(f"k={i}: X={box}, Midpoint=(x1={mid_x[0]:.6f}, x2={mid_x[1]:.6f})")
+        # PRINT TABLE 
+        print("\nTable for Krawczyk iterations:")
+        print("{:>3s} | {:>30s} | {:>30s} | {:>30s}".format(
+            "k", "X^(k)", "K(X^(k))", "X^(k+1)"
+        ))
 
-        # Plot contour f1=0 and f2=0
+        for k in range(3):
+            print("{:>3d} | {:>30s} | {:>30s} | {:>30s}".format(
+                k,
+                str(iterations[k]),
+                str(K_list[k]),
+                str(iterations[k+1])
+            ))
+
+        # (Plotting code stays unchanged)
         margin = 0.5
         xs = np.linspace(float(X0.x1.a)-margin, float(X0.x1.b)+margin, 400)
         ys = np.linspace(float(X0.x2.a)-margin, float(X0.x2.b)+margin, 400)
@@ -165,10 +184,9 @@ for xc in xc_values:
             ax.add_patch(rect)
             ax.text(box.x1.a, box.x2.b, f"X^{k}", fontsize=8, color='green')
 
-        plt.tight_layout()        
+        plt.tight_layout()
         count+=1
         filename = f"5_{count}.png"
         plt.savefig(filename, dpi=300)
         print("Saved:", filename)
         plt.show()
-
